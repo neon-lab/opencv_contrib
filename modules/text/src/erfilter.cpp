@@ -42,6 +42,7 @@
 
 #include "precomp.hpp"
 #include "opencv2/imgproc.hpp"
+#include "opencv2/highgui.hpp"
 #include "opencv2/ml.hpp"
 #include <limits>
 #include <fstream>
@@ -288,9 +289,9 @@ void ERFilterNM::er_tree_extract( InputArray image )
     quads[2][0] = (1<<2)|(1<<1);
     quads[2][1] = (1<<3)|(1);
     // quads[2][2] and quads[2][3] are never used so no need to initialize them.
-    // The four lowest bits in each quads[i][j] correspond to the 2x2 binary patterns 
-    // Q_1, Q_2, Q_3 in the Neumann and Matas CVPR 2012 paper 
-    // (see in page 4 at the end of first column). 
+    // The four lowest bits in each quads[i][j] correspond to the 2x2 binary patterns
+    // Q_1, Q_2, Q_3 in the Neumann and Matas CVPR 2012 paper
+    // (see in page 4 at the end of first column).
     // Q_1 and Q_2 have four patterns, while Q_3 has only two.
 
 
@@ -4166,6 +4167,116 @@ void MSERsToERStats(InputArray image, vector<vector<Point> > &contours, vector<v
     mtmp(cser.rect) = 0;
   }
 }
+
+void groups_draw(Mat &src, vector<Rect> &groups);
+void er_show(vector<Mat> &channels, vector<vector<ERStat> > &regions);
+
+
+void groups_draw(Mat &src, vector<Rect> &groups)
+{
+    for (int i=(int)groups.size()-1; i>=0; i--)
+    {
+        if (src.type() == CV_8UC3)
+            rectangle(src,groups.at(i).tl(),groups.at(i).br(),Scalar( 0, 255, 255 ), 3, 8 );
+        else
+            rectangle(src,groups.at(i).tl(),groups.at(i).br(),Scalar( 255 ), 3, 8 );
+    }
+}
+
+void er_show(vector<Mat> &channels, vector<vector<ERStat> > &regions)
+{
+    for (int c=0; c<(int)channels.size(); c++)
+    {
+        Mat dst = Mat::zeros(channels[0].rows+2,channels[0].cols+2,CV_8UC1);
+        for (int r=0; r<(int)regions[c].size(); r++)
+        {
+            ERStat er = regions[c][r];
+            if (er.parent != NULL) // deprecate the root region
+            {
+                int newMaskVal = 255;
+                int flags = 4 + (newMaskVal << 8) + FLOODFILL_FIXED_RANGE + FLOODFILL_MASK_ONLY;
+                floodFill(channels[c],dst,Point(er.pixel%channels[c].cols,er.pixel/channels[c].cols),
+                          Scalar(255),0,Scalar(er.level),Scalar(0),flags);
+            }
+        }
+        char buff[10]; char *buff_ptr = buff;
+        sprintf(buff, "channel %d", c);
+        imshow(buff_ptr, dst);
+    }
+    waitKey(-1);
+}
+
+void textDetect(InputArray _src, const String &model_1, const String &model_2, vector<Rect> &groups_boxes, OutputArray _dst)
+{
+  // Extract channels to be processed individually
+  Mat src = _src.getMat();
+  vector<Mat> channels;
+  computeNMChannels(src, channels);
+
+  int cn = (int)channels.size();
+  // Append negative channels to detect ER- (bright regions over dark background)
+  for (int c = 0; c < cn-1; c++)
+      channels.push_back(255-channels[c]);
+
+  // Create ERFilter objects with the 1st and 2nd stage default classifiers
+  // Ptr<ERFilter> er_filter1 = createERFilterNM1(loadClassifierNM1("trained_classifierNM1.xml"),16,0.00015f,0.13f,0.2f,true,0.1f);
+  // Ptr<ERFilter> er_filter2 = createERFilterNM2(loadClassifierNM2("trained_classifierNM2.xml"),0.5);
+  Ptr<ERFilter> er_filter1 = createERFilterNM1(loadClassifierNM1(model_1),16,0.00015f,0.13f,0.2f,true,0.1f);
+  Ptr<ERFilter> er_filter2 = createERFilterNM2(loadClassifierNM2(model_2),0.5);
+
+  vector<vector<ERStat> > regions(channels.size());
+  // Apply the default cascade classifier to each independent channel (could be done in parallel)
+  cout << "Extracting Class Specific Extremal Regions from " << (int)channels.size() << " channels ..." << endl;
+  cout << "    (...) this may take a while (...)" << endl << endl;
+  for (int c=0; c<(int)channels.size(); c++)
+  {
+      er_filter1->run(channels[c], regions[c]);
+      er_filter2->run(channels[c], regions[c]);
+  }
+
+  // Detect character groups
+  cout << "Grouping extracted ERs ... ";
+  vector< vector<Vec2i> > region_groups;
+  // vector<Rect> groups_boxes;
+  erGrouping(src, channels, regions, region_groups, groups_boxes, ERGROUPING_ORIENTATION_HORIZ);
+  //erGrouping(src, channels, regions, region_groups, groups_boxes, ERGROUPING_ORIENTATION_ANY, "./trained_classifier_erGrouping.xml", 0.5);
+  _dst.create(channels[0].rows+2, channels[0].cols+2, CV_8UC1);
+  Mat dst = _dst.getMat();
+  // dst = Mat::zeros(channels[0].rows+2,channels[0].cols+2,CV_8UC1);
+  for (int i = 0; i < region_groups.size(); i++) {
+    for (int j = 0; j < region_groups[i].size(); j++) {
+      Vec2i region_index = region_groups[i][j];
+      int c = region_index[0];
+      int r = region_index[1];
+      ERStat er = regions[c][r];
+      if (er.parent != NULL) {
+        int newMaskVal = 255;
+        int flags = 4 + (newMaskVal << 8) + FLOODFILL_FIXED_RANGE + FLOODFILL_MASK_ONLY;
+        Mat mask = Mat::zeros(channels[0].rows+2, channels[0].cols+2, CV_8UC1);
+        floodFill(channels[c],mask,Point(er.pixel%channels[c].cols,er.pixel/channels[c].cols),
+                  Scalar(255),0,Scalar(er.level),Scalar(0),flags);
+        dst += mask;
+      }
+    }
+    cout << endl;
+  }
+
+  imshow("Text region.", dst);
+  waitKey(-1);
+  // draw groups
+  groups_draw(src, groups_boxes);
+  imshow("grouping",src);
+  er_show(channels,regions);
+  waitKey(0);
+
+  destroyAllWindows();
+
+  // memory clean-up
+  er_filter1.release();
+  er_filter2.release();
+  regions.clear();
+}
+
 
 }
 }

@@ -343,6 +343,17 @@ An example of MSERsToERStats in use can be found in the text detection webcam_de
 CV_EXPORTS void MSERsToERStats(InputArray image, std::vector<std::vector<Point> > &contours,
                                std::vector<std::vector<ERStat> > &regions);
 
+/** @brief Detect text areas.
+@param image Source image CV_8UC1 from which the MSERs where extracted.
+
+It takes input image and detect text areas.
+*/
+CV_EXPORTS_W void textDetect(InputArray _src,
+                             const String &model_1,
+                             const String &model_2,
+                             CV_OUT std::vector<Rect> &groups_boxes,
+                             OutputArray _dst);
+
 //! @}
 
 }
