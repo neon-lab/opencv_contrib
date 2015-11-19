@@ -351,6 +351,10 @@ It takes input image and detect text areas.
 CV_EXPORTS_W void textDetect(InputArray _src,
                              const String &model_1,
                              const String &model_2,
+                             int thresholdDelta,
+                             float minArea, float maxArea, float minProbability,
+                             bool nonMaxSuppression, float minProbabilityDiff,
+                             float minProbablity_2,
                              CV_OUT std::vector<Rect> &groups_boxes,
                              OutputArray _dst);
 

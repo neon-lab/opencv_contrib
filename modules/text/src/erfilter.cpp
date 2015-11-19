@@ -4206,7 +4206,12 @@ void er_show(vector<Mat> &channels, vector<vector<ERStat> > &regions)
     waitKey(-1);
 }
 
-void textDetect(InputArray _src, const String &model_1, const String &model_2, vector<Rect> &groups_boxes, OutputArray _dst)
+void textDetect(InputArray _src, const String &model_1, const String &model_2,
+                int thresholdDelta,
+                float minArea, float maxArea, float minProbability,
+                bool nonMaxSuppression, float minProbabilityDiff,
+                float minProbablity_2,
+                vector<Rect> &groups_boxes, OutputArray _dst)
 {
   // Extract channels to be processed individually
   Mat src = _src.getMat();
@@ -4215,19 +4220,20 @@ void textDetect(InputArray _src, const String &model_1, const String &model_2, v
 
   int cn = (int)channels.size();
   // Append negative channels to detect ER- (bright regions over dark background)
-  for (int c = 0; c < cn-1; c++)
-      channels.push_back(255-channels[c]);
+  // for (int c = 0; c < cn-1; c++)
+  //     channels.push_back(255-channels[c]);
 
   // Create ERFilter objects with the 1st and 2nd stage default classifiers
   // Ptr<ERFilter> er_filter1 = createERFilterNM1(loadClassifierNM1("trained_classifierNM1.xml"),16,0.00015f,0.13f,0.2f,true,0.1f);
   // Ptr<ERFilter> er_filter2 = createERFilterNM2(loadClassifierNM2("trained_classifierNM2.xml"),0.5);
-  Ptr<ERFilter> er_filter1 = createERFilterNM1(loadClassifierNM1(model_1),16,0.00015f,0.13f,0.2f,true,0.1f);
-  Ptr<ERFilter> er_filter2 = createERFilterNM2(loadClassifierNM2(model_2),0.5);
+  Ptr<ERFilter> er_filter1 = createERFilterNM1(loadClassifierNM1(model_1),thresholdDelta,
+    minArea,maxArea,minProbability,nonMaxSuppression,minProbabilityDiff);
+  Ptr<ERFilter> er_filter2 = createERFilterNM2(loadClassifierNM2(model_2),minProbablity_2);
 
   vector<vector<ERStat> > regions(channels.size());
   // Apply the default cascade classifier to each independent channel (could be done in parallel)
-  cout << "Extracting Class Specific Extremal Regions from " << (int)channels.size() << " channels ..." << endl;
-  cout << "    (...) this may take a while (...)" << endl << endl;
+  // cout << "Extracting Class Specific Extremal Regions from " << (int)channels.size() << " channels ..." << endl;
+  // cout << "    (...) this may take a while (...)" << endl << endl;
   for (int c=0; c<(int)channels.size(); c++)
   {
       er_filter1->run(channels[c], regions[c]);
@@ -4235,7 +4241,7 @@ void textDetect(InputArray _src, const String &model_1, const String &model_2, v
   }
 
   // Detect character groups
-  cout << "Grouping extracted ERs ... ";
+  // cout << "Grouping extracted ERs ... ";
   vector< vector<Vec2i> > region_groups;
   // vector<Rect> groups_boxes;
   erGrouping(src, channels, regions, region_groups, groups_boxes, ERGROUPING_ORIENTATION_HORIZ);
@@ -4258,18 +4264,18 @@ void textDetect(InputArray _src, const String &model_1, const String &model_2, v
         dst += mask;
       }
     }
-    cout << endl;
+    // cout << endl;
   }
 
-  imshow("Text region.", dst);
-  waitKey(-1);
+  // imshow("Text region.", dst);
+  // waitKey(-1);
   // draw groups
-  groups_draw(src, groups_boxes);
-  imshow("grouping",src);
-  er_show(channels,regions);
-  waitKey(0);
+  // groups_draw(src, groups_boxes);
+  // imshow("grouping",src);
+  // er_show(channels,regions);
+  // waitKey(0);
 
-  destroyAllWindows();
+  // destroyAllWindows();
 
   // memory clean-up
   er_filter1.release();
